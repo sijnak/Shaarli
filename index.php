@@ -10,6 +10,9 @@
 // so we have to do this for avoid the strict standard error.
 date_default_timezone_set('UTC');
 
+// Separator used to distinguis tags
+define('tag_separator', ',');
+
 // -----------------------------------------------------------------------------------------------
 // Hardcoded parameter (These parameters can be overwritten by creating the file /config/options.php)
 $GLOBALS['config']['DATADIR'] = 'data'; // Data subdirectory
@@ -738,7 +741,7 @@ class linkdb implements Iterator, Countable, ArrayAccess
         if (!file_exists($GLOBALS['config']['DATASTORE'])) // Create a dummy database for example.
         {
              $this->links = array();
-             $link = array('title'=>'Shaarli - sebsauvage.net','url'=>'http://sebsauvage.net/wiki/doku.php?id=php:shaarli','description'=>'Welcome to Shaarli ! This is a bookmark. To edit or delete me, you must first login.','private'=>0,'linkdate'=>'20110914_190000','tags'=>'opensource software');
+             $link = array('title'=>'Shaarli - sebsauvage.net','url'=>'http://sebsauvage.net/wiki/doku.php?id=php:shaarli','description'=>'Welcome to Shaarli ! This is a bookmark. To edit or delete me, you must first login.','private'=>0,'linkdate'=>'20110914_190000','tags'=>'opensource, software');
              $this->links[$link['linkdate']] = $link;
              $link = array('title'=>'My secret stuff... - Pastebin.com','url'=>'http://pastebin.com/smCEEeSn','description'=>'SShhhh!!  I\'m a private link only YOU can see. You can delete me too.','private'=>1,'linkdate'=>'20110914_074522','tags'=>'secretstuff');
              $this->links[$link['linkdate']] = $link;
@@ -803,15 +806,15 @@ class linkdb implements Iterator, Countable, ArrayAccess
 
     // Filter by tag.
     // You can specify one or more tags (tags can be separated by space or comma).
-    // eg. print_r($mydb->filterTags('linux programming'));
+    // eg. print_r($mydb->filterTags('linux, programming'));
     public function filterTags($tags,$casesensitive=false)
     {
-        $t = str_replace(',',' ',($casesensitive?$tags:strtolower($tags)));
-        $searchtags=explode(' ',$t);
+        $t = str_replace(',',tag_separator,($casesensitive?$tags:strtolower($tags)));
+        $searchtags=explode(tag_separator,$t);
         $filtered=array();
         foreach($this->links as $l)
         {
-            $linktags = explode(' ',($casesensitive?$l['tags']:strtolower($l['tags'])));
+            $linktags = explode(tag_separator,($casesensitive?$l['tags']:strtolower($l['tags'])));
             if (count(array_intersect($linktags,$searchtags)) == count($searchtags))
                 $filtered[$l['linkdate']] = $l;
         }
@@ -849,12 +852,12 @@ class linkdb implements Iterator, Countable, ArrayAccess
     }
 
     // Returns the list of all tags
-    // Output: associative array key=tags, value=0
+    // Output: associative array key=tags, value=occurences
     public function allTags()
     {
         $tags=array();
         foreach($this->links as $link)
-            foreach(explode(' ',$link['tags']) as $tag)
+            foreach(explode(tag_separator,$link['tags']) as $tag)
                 if (!empty($tag)) $tags[$tag]=(empty($tags[$tag]) ? 1 : $tags[$tag]+1);
         arsort($tags); // Sort tags by usage (most used tag first)
         return $tags;
@@ -926,7 +929,7 @@ function showRSS()
         if (!$GLOBALS['config']['HIDE_TIMESTAMPS'] || isLoggedIn()) echo '<pubDate>'.htmlspecialchars($rfc822date)."</pubDate>\n";
         if ($link['tags']!='') // Adding tags to each RSS entry (as mentioned in RSS specification)
         {
-            foreach(explode(' ',$link['tags']) as $tag) { echo '<category domain="'.htmlspecialchars($pageaddr).'">'.htmlspecialchars($tag).'</category>'."\n"; }
+            foreach(explode(tag_separator,$link['tags']) as $tag) { echo '<category domain="'.htmlspecialchars($pageaddr).'">'.htmlspecialchars($tag).'</category>'."\n"; }
         }
 
         // Add permalink in description
@@ -998,7 +1001,7 @@ function showATOM()
         $entries.='<content type="html">'.htmlspecialchars(nl2br(keepMultipleSpaces(text2clickable(htmlspecialchars($link['description']))))).$descriptionlink."</content>\n";
         if ($link['tags']!='') // Adding tags to each ATOM entry (as mentioned in ATOM specification)
         {
-            foreach(explode(' ',$link['tags']) as $tag)
+            foreach(explode(tag_separator,$link['tags']) as $tag)
                 { $entries.='<category scheme="'.htmlspecialchars($pageaddr,ENT_QUOTES).'" term="'.htmlspecialchars($tag,ENT_QUOTES).'" />'."\n"; }
         }
         $entries.="</entry>\n";
@@ -1125,7 +1128,7 @@ function showDaily()
     // We pre-format some fields for proper output.
     foreach($linksToDisplay as $key=>$link)
     {
-        $taglist = explode(' ',$link['tags']);
+        $taglist = explode(tag_separator,$link['tags']);
         uasort($taglist, 'strcasecmp');
         $linksToDisplay[$key]['taglist']=$taglist;
         $linksToDisplay[$key]['formatedDescription']=nl2br(keepMultipleSpaces(text2clickable(htmlspecialchars($link['description']))));
@@ -1250,7 +1253,7 @@ function renderPage()
         // Get previous URL (http_referer) and add the tag to the searchtags parameters in query.
         if (empty($_SERVER['HTTP_REFERER'])) { header('Location: ?searchtags='.urlencode($_GET['addtag'])); exit; } // In case browser does not send HTTP_REFERER
         parse_str(parse_url($_SERVER['HTTP_REFERER'],PHP_URL_QUERY), $params);
-        $params['searchtags'] = (empty($params['searchtags']) ?  trim($_GET['addtag']) : trim($params['searchtags']).' '.trim($_GET['addtag']));
+        $params['searchtags'] = (empty($params['searchtags']) ?  trim($_GET['addtag']) : trim($params['searchtags']).tag_separator.trim($_GET['addtag']));
         unset($params['page']); // We also remove page (keeping the same page has no sense, since the results are different)
         header('Location: ?'.http_build_query($params));
         exit;
@@ -1264,9 +1267,9 @@ function renderPage()
         parse_str(parse_url($_SERVER['HTTP_REFERER'],PHP_URL_QUERY), $params);
         if (isset($params['searchtags']))
         {
-            $tags = explode(' ',$params['searchtags']);
+            $tags = explode(tag_separator,$params['searchtags']);
             $tags=array_diff($tags, array($_GET['removetag'])); // Remove value from array $tags.
-            if (count($tags)==0) unset($params['searchtags']); else $params['searchtags'] = implode(' ',$tags);
+            if (count($tags)==0) unset($params['searchtags']); else $params['searchtags'] = implode(tag_separator,$tags);
             unset($params['page']); // We also remove page (keeping the same page has no sense, since the results are different)
         }
         header('Location: ?'.http_build_query($params));
@@ -1415,9 +1418,9 @@ function renderPage()
             $linksToAlter = $LINKSDB->filterTags($needle,true); // true for case-sensitive tag search.
             foreach($linksToAlter as $key=>$value)
             {
-                $tags = explode(' ',trim($value['tags']));
+                $tags = explode(tag_separator,trim($value['tags']));
                 unset($tags[array_search($needle,$tags)]); // Remove tag.
-                $value['tags']=trim(implode(' ',$tags));
+                $value['tags']=trim(implode(tag_separator,$tags));
                 $LINKSDB[$key]=$value;
             }
             $LINKSDB->savedb(); // save to disk
@@ -1432,9 +1435,9 @@ function renderPage()
             $linksToAlter = $LINKSDB->filterTags($needle,true); // true for case-sensitive tag search.
             foreach($linksToAlter as $key=>$value)
             {
-                $tags = explode(' ',trim($value['tags']));
+                $tags = explode(tag_separator,trim($value['tags']));
                 $tags[array_search($needle,$tags)] = trim($_POST['totag']); // Remplace tags value.
-                $value['tags']=trim(implode(' ',$tags));
+                $value['tags']=trim(implode(tag_separator,$tags));
                 $LINKSDB[$key]=$value;
             }
             $LINKSDB->savedb(); // save to disk
@@ -1456,13 +1459,15 @@ function renderPage()
     if (isset($_POST['save_edit']))
     {
         if (!tokenOk($_POST['token'])) die('Wrong token.'); // Go away !
-        $tags = trim(preg_replace('/\s\s+/',' ', $_POST['lf_tags'])); // Remove multiple spaces.
+//TODO : remove the multiple spaces replacement, if necessary and add multiple coma deletion
+		$tags = preg_replace('/,\s+/',',', $_POST['lf_tags']); // remove space between tags
+        $tags = trim(preg_replace('/\s\s+/',' ', $tags)); // Remove multiple spaces.
         $linkdate=$_POST['lf_linkdate'];
         $url = trim($_POST['lf_url']);
         if (!startsWith($url,'http:') && !startsWith($url,'https:') && !startsWith($url,'ftp:') && !startsWith($url,'magnet:') && !startsWith($url,'?'))
             $url = 'http://'.$url;
         $link = array('title'=>trim($_POST['lf_title']),'url'=>$url,'description'=>trim($_POST['lf_description']),'private'=>(isset($_POST['lf_private']) ? 1 : 0),
-                      'linkdate'=>$linkdate,'tags'=>str_replace(',',' ',$tags));
+                      'linkdate'=>$linkdate,'tags'=>$tags);
         if ($link['title']=='') $link['title']=$link['url']; // If title is empty, use the URL as title.
         $LINKSDB[$linkdate] = $link;
         $LINKSDB->savedb(); // save to disk
@@ -1595,7 +1600,7 @@ HTML;
                ($exportWhat=='public' && $link['private']==0))
             {
                 echo '<DT><A HREF="'.htmlspecialchars($link['url']).'" ADD_DATE="'.linkdate2timestamp($link['linkdate']).'" PRIVATE="'.$link['private'].'"';
-                if ($link['tags']!='') echo ' TAGS="'.htmlspecialchars(str_replace(' ',',',$link['tags'])).'"';
+                if ($link['tags']!='') echo ' TAGS="'.htmlspecialchars(str_replace(tag_separator,',',$link['tags'])).'"';
                 echo '>'.htmlspecialchars($link['title'])."</A>\n";
                 if ($link['description']!='') echo '<DD>'.htmlspecialchars($link['description'])."\n";
             }
@@ -1676,7 +1681,7 @@ function importFile()
                     if ($attr=='HREF') $link['url']=html_entity_decode($value,ENT_QUOTES,'UTF-8');
                     elseif ($attr=='ADD_DATE') $raw_add_date=intval($value);
                     elseif ($attr=='PRIVATE') $link['private']=($value=='0'?0:1);
-                    elseif ($attr=='TAGS') $link['tags']=html_entity_decode(str_replace(',',' ',$value),ENT_QUOTES,'UTF-8');
+                    elseif ($attr=='TAGS') $link['tags']=html_entity_decode(str_replace(',',tag_separator,$value),ENT_QUOTES,'UTF-8');
                 }
                 if ($link['url']!='')
                 {
@@ -1735,8 +1740,9 @@ function buildLinkList($PAGE,$LINKSDB)
     }
     elseif (isset($_GET['searchtags'])) // Search by tag
     {
-        $linksToDisplay = $LINKSDB->filterTags(trim($_GET['searchtags']));
-        $search_crits=explode(' ',trim($_GET['searchtags']));
+        $searchtags = preg_replace('/,\s+/',',', $_GET['searchtags']); // remove space between tags
+        $linksToDisplay = $LINKSDB->filterTags(trim($searchtags));
+        $search_crits=explode(tag_separator,trim($_GET['searchtags']));
         $search_type='tags';
     }
     elseif (isset($_SERVER['QUERY_STRING']) && preg_match('/[a-zA-Z0-9-_@]{6}(&.+?)?/',$_SERVER['QUERY_STRING'])) // Detect smallHashes in URL
@@ -1792,7 +1798,7 @@ function buildLinkList($PAGE,$LINKSDB)
         $classLi =  $i%2!=0 ? '' : 'publicLinkHightLight';
         $link['class'] = ($link['private']==0 ? $classLi : 'private');
         $link['localdate']=linkdate2locale($link['linkdate']);
-        $taglist = explode(' ',$link['tags']);
+        $taglist = explode(tag_separator,$link['tags']);
         uasort($taglist, 'strcasecmp');
         $link['taglist']=$taglist;
         $linkDisp[$keys[$i]] = $link;
@@ -2154,6 +2160,7 @@ function processWS()
     {
         /* To speed up things, we store list of tags in session */
         if (empty($_SESSION['tags'])) $_SESSION['tags'] = $LINKSDB->allTags();
+        $suggested=array();
         foreach($_SESSION['tags'] as $key=>$value)
         {
             if (startsWith($key,$term,$case=true)) $suggested[$key]=0;
