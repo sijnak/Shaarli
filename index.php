@@ -683,7 +683,7 @@ class pageBuilder
        description : description of the entry
        private : Is this link private ? 0=no, other value=yes
        linkdate : date of the creation of this entry, in the form YYYYMMDD_HHMMSS (eg.'20110914_192317')
-       tags : tags attached to this entry (separated by spaces)
+       tags : tags attached to this entry (separated by tag_separator)
 
    We implement 3 interfaces:
      - ArrayAccess so that this object behaves like an associative array.
@@ -1658,6 +1658,7 @@ function importFile()
     // Sniff file type:
     $type='unknown';
     if (startsWith($data,'<!DOCTYPE NETSCAPE-Bookmark-file-1>')) $type='netscape'; // Netscape bookmark file (aka Firefox).
+	else if (startsWith($data,'{"title":"","id":1,')) $type='json-firefox'; // Firefox json backup format.
 
     // Then import the bookmarks.
     if ($type=='netscape')
@@ -1717,10 +1718,101 @@ function importFile()
 
         echo '<script language="JavaScript">alert("File '.$filename.' ('.$filesize.' bytes) was successfully processed: '.$import_count.' links imported.");document.location=\'?\';</script>';
     }
+    else if ($type=='json-firefox')
+    {
+        // This is the strange Firefox json export file
+        // Entries are saved several times in the file when we use tags, oh crap !
+	    $data = json_decode($data);
+        $bookmarks = array();
+        $convertFolderstoTags = true;
+        $bookmarks = parse_firefox($data, $bookmarks, $private, $convertFolderstoTags); // convert json structure tu clean table structure
+
+        // Post-processing : check for double insertion and add a date if none is defined
+        foreach($bookmarks as $key=>$link)
+        {
+		    $dblink = $LINKSDB->getLinkFromUrl($link['url']); // See if the link is already in database.
+		    if ($dblink==false)
+		    {  // Link not in database, let's import it...
+				if (!isset($link['linkdate']))
+					$raw_add_date=time(); // In case of shitty bookmark file with no ADD_DATE
+				else
+					$raw_add_date = $link['linkdate'];
+			   // Make sure date/time is not already used by another link.
+			   // (Some bookmark files have several different links with the same ADD_DATE)
+			   // We increment date by 1 second until we find a date which is not used in db.
+			   // (so that links that have the same date/time are more or less kept grouped by date, but do not conflict.)
+			   while (!empty($LINKSDB[date('Ymd_His',$raw_add_date)])) { $raw_add_date++; }// Yes, I know it's ugly.
+			   $link['linkdate']=date('Ymd_His',$raw_add_date);
+			   $LINKSDB[$link['linkdate']] = $link;
+			   $import_count++;
+			}
+			else // link already present in database.
+			{
+				if ($overwrite)
+				{   // If overwrite is required, we import link data, except date/time.
+					$link['linkdate']=$dblink['linkdate'];
+					$LINKSDB[$link['linkdate']] = $link;
+					$import_count++;
+				}
+			}
+        }
+        $LINKSDB->savedb();
+
+        echo '<script language="JavaScript">alert("File '.$filename.' ('.$filesize.' bytes) was successfully processed: '.$import_count.' links imported.");document.location=\'?\';</script>';
+    }
     else
     {
         echo '<script language="JavaScript">alert("File '.$filename.' ('.$filesize.' bytes) has an unknown file format. Nothing was imported.");document.location=\'?\';</script>';
     }
+}
+
+// -----------------------------------------------------------------------------------------------
+// Parser for the json bookmarks backup file from Firefox
+// This function recursively walks through the array extracted from the json file and returns an
+// array of bookmarks.
+function parse_firefox($entry, $bookmarks, $private = false, $convertFolderstoTags = true, $folders = array())
+{
+	if ($entry->type == "text/x-moz-place-container")
+	{
+		if (($convertFolderstoTags && isset($entry->parent) && $entry->parent != 1) || (isset($entry->parent) && $entry->parent == 4))
+		{
+			if (!array_key_exists($entry->title, $folders) && !empty($entry->title))
+				$folders[$entry->title] = true;
+		}
+
+		foreach($entry->children as $child)
+		{
+			$bookmarks = parse_firefox($child, $bookmarks, $private, $convertFolderstoTags, $folders);
+		}
+	}
+	else if ($entry->type == "text/x-moz-place")
+	{
+		$hash = smallHash($entry->title.$entry->uri);
+		if (array_key_exists($hash, $bookmarks))
+		{ // we already found this bookmark
+			if (empty($bookmarks[$hash]['tags']))
+				$bookmarks[$hash]['tags'] = implode(',', array_keys($folders));
+			else
+				$bookmarks[$hash]['tags'] .= ','.implode(',', array_keys($folders));
+		}
+		else
+		{ // this is the first time we see this bookmark
+			$bookmarks[$hash]['title'] = $entry->title;
+			$bookmarks[$hash]['url'] = $entry->uri;
+			if (isset($entry->annos)) {
+				$bookmarks[$hash]['description'] = html_entity_decode(trim($entry->annos[0]->value),ENT_QUOTES,'UTF-8');
+			} else {
+				$bookmarks[$hash]['description'] = '';
+			}
+			$bookmarks[$hash]['private'] = $private;
+			if (isset($entry->dateAdded)) {
+				$bookmarks[$hash]['linkdate'] = $entry->dateAdded/1000000;
+			}
+			$bookmarks[$hash]['tags'] = implode(',', array_keys($folders));
+		}
+	}
+
+	return $bookmarks;
 }
 
 // -----------------------------------------------------------------------------------------------
