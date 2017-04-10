@@ -188,6 +188,8 @@ class ConfigManager
             'general.timezone',
             'general.title',
             'general.header_link',
+            'general.separators',
+            'general.default_separator',
             'privacy.default_private_links',
             'redirector.url',
         );
@@ -308,6 +310,8 @@ class ConfigManager
 
         $this->setEmpty('general.header_link', '?');
         $this->setEmpty('general.links_per_page', 20);
+        $this->setEmpty('general.separators', ', ');
+        $this->setEmpty('general.default_separator', ' ');
         $this->setEmpty('general.enabled_plugins', array('qrcode'));
 
         $this->setEmpty('updates.check_updates', false);

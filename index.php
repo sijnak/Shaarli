@@ -73,6 +73,7 @@ require_once 'application/LinkFilter.php';
 require_once 'application/LinkUtils.php';
 require_once 'application/NetscapeBookmarkUtils.php';
 require_once 'application/PageBuilder.php';
+require_once 'application/TagUtil.php';
 require_once 'application/TimeZone.php';
 require_once 'application/Url.php';
 require_once 'application/Utils.php';
@@ -124,6 +125,10 @@ $conf->setEmpty('general.timezone', date_default_timezone_get());
 $conf->setEmpty('general.title', 'Shared links on '. escape(index_url($_SERVER)));
 RainTPL::$tpl_dir = $conf->get('resource.raintpl_tpl'); // template directory
 RainTPL::$cache_dir = $conf->get('resource.raintpl_tmp'); // cache directory
+
+// Instance of the TagUtil class used to parse and serialize tag lists,
+// respectively from forms and for display.
+$tagUtil = new TagUtil($conf->get('general.separators'), $conf->get('general.default_separator'));
 
 $pluginManager = new PluginManager($conf);
 $pluginManager->load($conf->get('general.enabled_plugins'));
@@ -674,10 +679,8 @@ function showDaily($pageBuilder, $LINKSDB, $conf, $pluginManager)
     // We pre-format some fields for proper output.
     foreach($linksToDisplay as $key=>$link)
     {
-
-        $taglist = explode(' ',$link['tags']);
-        uasort($taglist, 'strcasecmp');
-        $linksToDisplay[$key]['taglist']=$taglist;
+        uasort($link['tags'], 'strcasecmp');
+        $linksToDisplay[$key]['tags']=$link['tags'];
         $linksToDisplay[$key]['formatedDescription'] = format_description($link['description'], $conf->get('redirector.url'));
         $linksToDisplay[$key]['thumbnail'] = thumbnail($conf, $link['url']);
         $date = DateTime::createFromFormat(LinkDB::LINK_DATE_FORMAT, $link['linkdate']);
@@ -731,10 +734,11 @@ function showDaily($pageBuilder, $LINKSDB, $conf, $pluginManager)
  * @param pageBuilder   $PAGE    pageBuilder instance.
  * @param LinkDB        $LINKSDB LinkDB instance.
  * @param ConfigManager $conf    Configuration Manager instance.
+ * @param TagUtil       $tagUtil Tag Utility instance.
  * @param PluginManager $pluginManager Plugin Manager instance.
  */
-function showLinkList($PAGE, $LINKSDB, $conf, $pluginManager) {
-    buildLinkList($PAGE,$LINKSDB, $conf, $pluginManager); // Compute list of links to display
+function showLinkList($PAGE, $LINKSDB, $conf, $tagUtil, $pluginManager) {
+    buildLinkList($PAGE,$LINKSDB, $conf, $tagUtil, $pluginManager); // Compute list of links to display
     $PAGE->renderPage('linklist');
 }
 
@@ -742,9 +746,10 @@ function showLinkList($PAGE, $LINKSDB, $conf, $pluginManager) {
  * Render HTML page (according to URL parameters and user rights)
  *
  * @param ConfigManager $conf          Configuration Manager instance.
+ * @param TagUtil       $tagUtil       Tag Utility instance.
  * @param PluginManager $pluginManager Plugin Manager instance,
  */
-function renderPage($conf, $pluginManager)
+function renderPage($conf, $tagUtil, $pluginManager)
 {
     $LINKSDB = new LinkDB(
         $conf->get('resource.datastore'),
@@ -971,9 +976,8 @@ function renderPage($conf, $pluginManager)
         }
 
         // Check if this tag is already in the search query and ignore it if it is.
-        // Each tag is always separated by a space
         if (isset($params['searchtags'])) {
-            $current_tags = explode(' ', $params['searchtags']);
+            $current_tags = $tagUtil->parseTags($params['searchtags']);
         } else {
             $current_tags = array();
         }
@@ -986,10 +990,11 @@ function renderPage($conf, $pluginManager)
         }
         // Append the tag if necessary
         if (empty($params['searchtags'])) {
-            $params['searchtags'] = trim($_GET['addtag']);
+            $params['searchtags'] = trim(escape($_GET['addtag']));
         }
         else if ($addtag) {
-            $params['searchtags'] = trim($params['searchtags']).' '.trim($_GET['addtag']);
+            $current_tags[] = trim(escape($_GET['addtag']));
+            $params['searchtags'] = $tagUtil->serializeTags($current_tags);
         }
 
         unset($params['page']); // We also remove page (keeping the same page has no sense, since the results are different)
@@ -1014,10 +1019,10 @@ function renderPage($conf, $pluginManager)
         }
 
         if (isset($params['searchtags'])) {
-            $tags = explode(' ', $params['searchtags']);
+            $tags = $tagUtil->parseTags($params['searchtags']);
             // Remove value from array $tags.
             $tags = array_diff($tags, array($_GET['removetag']));
-            $params['searchtags'] = implode(' ',$tags);
+            $params['searchtags'] = $tagUtil->serializeTags($tags);
 
             if (empty($params['searchtags'])) {
                 unset($params['searchtags']);
@@ -1062,7 +1067,7 @@ function renderPage($conf, $pluginManager)
             exit;
         }
 
-        showLinkList($PAGE, $LINKSDB, $conf, $pluginManager);
+        showLinkList($PAGE, $LINKSDB, $conf, $tagUtil, $pluginManager);
         if (isset($_GET['edit_link'])) {
             header('Location: ?do=login&edit_link='. escape($_GET['edit_link']));
             exit;
@@ -1148,6 +1153,12 @@ function renderPage($conf, $pluginManager)
             $conf->set('general.title', escape($_POST['title']));
             $conf->set('general.header_link', escape($_POST['titleLink']));
             $conf->set('redirector.url', escape($_POST['redirector']));
+            $conf->set('general.separators', escape($_POST['separators']));
+            // TODO: inform the user if she chose a default separator that is not
+            //       already defined as a separator (in which case it is ignored)
+            if (!empty($_POST['defaultSeparator'])
+                && strpos($conf->get('general.separators'), $_POST['defaultSeparator']) !== false)
+                    $conf->set('general.default_separator', $_POST['defaultSeparator']);
             $conf->set('security.session_protection_disabled', !empty($_POST['disablesessionprotection']));
             $conf->set('privacy.default_private_links', !empty($_POST['privateLinkByDefault']));
             $conf->set('feed.rss_permalinks', !empty($_POST['enableRssPermalinks']));
@@ -1174,6 +1185,8 @@ function renderPage($conf, $pluginManager)
             $PAGE->assign('title', $conf->get('general.title'));
             $PAGE->assign('redirector', $conf->get('redirector.url'));
             list($timezone_form, $timezone_js) = generateTimeZoneForm($conf->get('general.timezone'));
+            $PAGE->assign('separators', $conf->get('general.separators'));
+            $PAGE->assign('defaultSeparator', $conf->get('general.default_separator'));
             $PAGE->assign('timezone_form', $timezone_form);
             $PAGE->assign('timezone_js',$timezone_js);
             $PAGE->assign('private_links_default', $conf->get('privacy.default_private_links', false));
@@ -1202,14 +1215,15 @@ function renderPage($conf, $pluginManager)
         // Delete a tag:
         if (isset($_POST['deletetag']) && !empty($_POST['fromtag'])) {
             $needle = trim($_POST['fromtag']);
+            $needle = $tagUtil->parseTags($needle);
             // True for case-sensitive tag search.
             $linksToAlter = $LINKSDB->filterSearch(array('searchtags' => $needle), true);
             foreach($linksToAlter as $key=>$value)
             {
-                $tags = explode(' ',trim($value['tags']));
-                unset($tags[array_search($needle,$tags)]); // Remove tag.
-                $value['tags']=trim(implode(' ',$tags));
-                $LINKSDB[$key]=$value;
+                $tags = $value['tags'];
+                unset($tags[array_search($needle[0], $tags)]); // Remove tag.
+                $value['tags'] = $tags;
+                $LINKSDB[$key] = $value;
             }
             $LINKSDB->save($conf->get('resource.page_cache'));
             echo '<script>alert("Tag was removed from '.count($linksToAlter).' links.");document.location=\'?\';</script>';
@@ -1220,12 +1234,12 @@ function renderPage($conf, $pluginManager)
         if (isset($_POST['renametag']) && !empty($_POST['fromtag']) && !empty($_POST['totag'])) {
             $needle = trim($_POST['fromtag']);
             // True for case-sensitive tag search.
-            $linksToAlter = $LINKSDB->filterSearch(array('searchtags' => $needle), true);
+            $linksToAlter = $LINKSDB->filterSearch(array('searchtags' => array($needle)), true);
             foreach($linksToAlter as $key=>$value)
             {
-                $tags = explode(' ',trim($value['tags']));
+                $tags = $value['tags'];
                 $tags[array_search($needle,$tags)] = trim($_POST['totag']); // Replace tags value.
-                $value['tags']=trim(implode(' ',$tags));
+                $value['tags']=$tags;
                 $LINKSDB[$key]=$value;
             }
             $LINKSDB->save($conf->get('resource.page_cache')); // Save to disk.
@@ -1251,12 +1265,7 @@ function renderPage($conf, $pluginManager)
         if (! tokenOk($_POST['token'])) {
             die('Wrong token.');
         }
-        // Remove multiple spaces.
-        $tags = trim(preg_replace('/\s\s+/', ' ', $_POST['lf_tags']));
-        // Remove first '-' char in tags.
-        $tags = preg_replace('/(^| )\-/', '$1', $tags);
-        // Remove duplicates.
-        $tags = implode(' ', array_unique(explode(' ', $tags)));
+        $tags = $tagUtil->parseTags($_POST['lf_tags']);
 
         $url = trim($_POST['lf_url']);
         if (! startsWith($url, 'http:') && ! startsWith($url, 'https:')
@@ -1273,7 +1282,7 @@ function renderPage($conf, $pluginManager)
             'private' => (isset($_POST['lf_private']) ? 1 : 0),
             'linkdate' => $linkdate,
             'updated' => $updated,
-            'tags' => str_replace(',', ' ', $tags)
+            'tags' => $tags
         );
         // If title is empty, use the URL as title.
         if ($link['title'] == '') {
@@ -1366,6 +1375,7 @@ function renderPage($conf, $pluginManager)
         $link = $LINKSDB[$_GET['edit_link']];  // Read database
         if (!$link) { header('Location: ?'); exit; } // Link not found in database.
         $data = array(
+            'default_separator' => $conf->get('general.default_separator'),
             'link' => $link,
             'link_is_new' => false,
             'http_referer' => (isset($_SERVER['HTTP_REFERER']) ? escape($_SERVER['HTTP_REFERER']) : ''),
@@ -1396,7 +1406,7 @@ function renderPage($conf, $pluginManager)
             $title = empty($_GET['title']) ? '' : escape($_GET['title']);
             // Get description if it was provided in URL (by the bookmarklet). [Bronco added that]
             $description = empty($_GET['description']) ? '' : escape($_GET['description']);
-            $tags = empty($_GET['tags']) ? '' : escape($_GET['tags']);
+            $tags = $tagUtil->parseTags($_GET['tags']);
             $private = !empty($_GET['private']) && $_GET['private'] === "1" ? 1 : 0;
             // If this is an HTTP(S) link, we try go get the page to extract the title (otherwise we will to straight to the edit form.)
             if (empty($title) && strpos(get_url_scheme($url), 'http') !== false) {
@@ -1432,6 +1442,7 @@ function renderPage($conf, $pluginManager)
         }
 
         $data = array(
+            'default_separator' => $conf->get('general.default_separator'),
             'link' => $link,
             'link_is_new' => $link_is_new,
             'http_referer' => (isset($_SERVER['HTTP_REFERER']) ? escape($_SERVER['HTTP_REFERER']) : ''),
@@ -1520,7 +1531,8 @@ function renderPage($conf, $pluginManager)
             $_POST,
             $_FILES,
             $LINKSDB,
-            $conf->get('resource.page_cache')
+            $conf->get('resource.page_cache'),
+            $tagUtil
         );
         echo '<script>alert("'.$status.'");document.location=\'?do='
              .Router::$PAGE_IMPORT .'\';</script>';
@@ -1576,7 +1588,7 @@ function renderPage($conf, $pluginManager)
     }
 
     // -------- Otherwise, simply display search form and links:
-    showLinkList($PAGE, $LINKSDB, $conf, $pluginManager);
+    showLinkList($PAGE, $LINKSDB, $conf, $tagUtil, $pluginManager);
     exit;
 }
 
@@ -1587,12 +1599,14 @@ function renderPage($conf, $pluginManager)
  * @param pageBuilder   $PAGE          pageBuilder instance.
  * @param LinkDB        $LINKSDB       LinkDB instance.
  * @param ConfigManager $conf          Configuration Manager instance.
+ * @param TagUtil       $tagUtil       TagUtil instance.
  * @param PluginManager $pluginManager Plugin Manager instance.
  */
-function buildLinkList($PAGE,$LINKSDB, $conf, $pluginManager)
+function buildLinkList($PAGE,$LINKSDB, $conf, $tagUtil, $pluginManager)
 {
     // Used in templates
-    $searchtags = !empty($_GET['searchtags']) ? escape($_GET['searchtags']) : '';
+    $searchtags = !empty($_GET['searchtags']) ? $tagUtil->parseTags(escape($_GET['searchtags'])) : array();
+    $searchtagslist = $tagUtil->serializeTags($searchtags);
     $searchterm = !empty($_GET['searchterm']) ? escape($_GET['searchterm']) : '';
 
     // Smallhash filter
@@ -1607,6 +1621,7 @@ function buildLinkList($PAGE,$LINKSDB, $conf, $pluginManager)
     } else {
         // Filter links according search parameters.
         $privateonly = !empty($_SESSION['privateonly']);
+        $_GET['searchtags'] = $searchtags;
         $linksToDisplay = $LINKSDB->filterSearch($_GET, false, $privateonly);
     }
 
@@ -1642,9 +1657,7 @@ function buildLinkList($PAGE,$LINKSDB, $conf, $pluginManager)
         } else {
             $link['updated_timestamp'] = '';
         }
-        $taglist = explode(' ', $link['tags']);
-        uasort($taglist, 'strcasecmp');
-        $link['taglist'] = $taglist;
+        uasort($link['tags'], 'strcasecmp');
         $link['shorturl'] = smallHash($link['linkdate']);
         // Check for both signs of a note: starting with ? and 7 chars long.
         if ($link['url'][0] === '?' &&
@@ -1677,8 +1690,11 @@ function buildLinkList($PAGE,$LINKSDB, $conf, $pluginManager)
         'result_count' => count($linksToDisplay),
         'search_term' => $searchterm,
         'search_tags' => $searchtags,
+        'search_tags_list' => $searchtagslist,
         'redirector' => $conf->get('redirector.url'),  // Optional redirector URL.
         'links' => $linkDisp,
+        'separators' => $conf->get('general.separators'),
+        'default_separator' => $conf->get('general.default_separator'), // TODO: fix auto-completion for custom separator
         'tags' => $LINKSDB->allTags(),
     );
 
@@ -2201,4 +2217,4 @@ if (isset($_SERVER['QUERY_STRING']) && startsWith($_SERVER['QUERY_STRING'], 'do=
 if (!isset($_SESSION['LINKS_PER_PAGE'])) {
     $_SESSION['LINKS_PER_PAGE'] = $conf->get('general.links_per_page', 20);
 }
-renderPage($conf, $pluginManager);
+renderPage($conf, $tagUtil, $pluginManager);

@@ -233,10 +233,9 @@ class LinkFilter
     /**
      * Returns the list of links associated with a given list of tags
      *
-     * You can specify one or more tags, separated by space or a comma, e.g.
-     *  print_r($mydb->filterTags('linux programming'));
+     * You can specify one or more tags, in an array
      *
-     * @param string $tags          list of tags separated by commas or blank spaces.
+     * @param string $tags          list of tags (array)
      * @param bool   $casesensitive ignore case if false.
      * @param bool   $privateonly   returns private links only.
      *
@@ -244,13 +243,12 @@ class LinkFilter
      */
     public function filterTags($tags, $casesensitive = false, $privateonly = false)
     {
-        // Implode if array for clean up.
-        $tags = is_array($tags) ? trim(implode(' ', $tags)) : $tags;
         if (empty($tags)) {
             return $this->links;
         }
 
-        $searchtags = self::tagsStrToArray($tags, $casesensitive);
+        $searchtags = $casesensitive ? $tags : self::lowerCase($tags);
+
         $filtered = array();
         if (empty($searchtags)) {
             return $filtered;
@@ -262,7 +260,7 @@ class LinkFilter
                 continue;
             }
 
-            $linktags = self::tagsStrToArray($link['tags'], $casesensitive);
+            $linktags = $casesensitive ? $link['tags'] : self::lowerCase($link['tags']);
 
             $found = true;
             for ($i = 0 ; $i < count($searchtags) && $found; $i++) {
@@ -336,22 +334,22 @@ class LinkFilter
     }
 
     /**
-     * Convert a list of tags (str) to an array. Also
-     * - handle case sensitivity.
-     * - accepts spaces commas as separator.
+     * Move tags to lower case.
      *
      * @param string $tags          string containing a list of tags.
-     * @param bool   $casesensitive will convert everything to lowercase if false.
      *
-     * @return array filtered tags string.
+     * @return array of lower case tags.
     */
-    public static function tagsStrToArray($tags, $casesensitive)
+    public static function lowerCase($tags)
     {
-        // We use UTF-8 conversion to handle various graphemes (i.e. cyrillic, or greek)
-        $tagsOut = $casesensitive ? $tags : mb_convert_case($tags, MB_CASE_LOWER, 'UTF-8');
-        $tagsOut = str_replace(',', ' ', $tagsOut);
-
-        return array_values(array_filter(explode(' ', trim($tagsOut)), 'strlen'));
+        $lowerCase = function($string) {
+            // We use UTF-8 conversion to handle various graphemes (i.e. cyrillic, or greek)
+            return mb_convert_case($string, MB_CASE_LOWER, 'UTF-8');
+        };
+        
+        $tagsOut = array_map($lowerCase, $tags);
+        
+        return array_values(array_filter($tagsOut, 'strlen'));
     }
 }
 

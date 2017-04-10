@@ -228,7 +228,7 @@ To learn how to use Shaarli, consult the link "Help/documentation" at the bottom
 You use the community supported version of the original Shaarli project, by Sebastien Sauvage.',
             'private'=>0,
             'linkdate'=> date('Ymd_His'),
-            'tags'=>'opensource software'
+            'tags'=> array('open source', 'software')
         );
         $this->links[$link['linkdate']] = $link;
 
@@ -238,7 +238,7 @@ You use the community supported version of the original Shaarli project, by Seba
             'description'=>'Shhhh! I\'m a private link only YOU can see. You can delete me too.',
             'private'=>1,
             'linkdate'=> date('Ymd_His', strtotime('-1 minute')),
-            'tags'=>'secretstuff'
+            'tags'=> array('secret stuff')
         );
         $this->links[$link['linkdate']] = $link;
 
@@ -292,7 +292,11 @@ You use the community supported version of the original Shaarli project, by Seba
 
             // Remove private tags if the user is not logged in.
             if (! $this->loggedIn) {
-                $link['tags'] = preg_replace('/(^|\s+)\.[^($|\s)]+\s*/', ' ', $link['tags']);
+                foreach($link['tags'] as $id => $tag) {
+                    if (strlen($tag) > 0 && $tag[0] == '.') {
+                        unset($link['tags'][$id]);
+                    }
+                }
             }
 
             // Do not use the redirector for internal links (Shaarli note URL starting with a '?').
@@ -406,7 +410,7 @@ You use the community supported version of the original Shaarli project, by Seba
     public function filterSearch($filterRequest = array(), $casesensitive = false, $privateonly = false)
     {
         // Filter link database according to parameters.
-        $searchtags = !empty($filterRequest['searchtags']) ? escape($filterRequest['searchtags']) : '';
+        $searchtags = !empty($filterRequest['searchtags']) ? $filterRequest['searchtags'] : array();
         $searchterm = !empty($filterRequest['searchterm']) ? escape($filterRequest['searchterm']) : '';
 
         // Search tags + fullsearch.
@@ -436,14 +440,14 @@ You use the community supported version of the original Shaarli project, by Seba
 
     /**
      * Returns the list of all tags
-     * Output: associative array key=tags, value=0
+     * Output: associative array key=tags, value=count
      */
     public function allTags()
     {
         $tags = array();
         $caseMapping = array();
         foreach ($this->links as $link) {
-            foreach (preg_split('/\s+/', $link['tags'], 0, PREG_SPLIT_NO_EMPTY) as $tag) {
+            foreach ($link['tags'] as $tag) {
                 if (empty($tag)) {
                     continue;
                 }
