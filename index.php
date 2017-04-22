@@ -1121,7 +1121,7 @@ function renderPage($conf, $pluginManager, $LINKSDB, $tagUtil)
             $conf->set('general.header_link', escape($_POST['titleLink']));
             $conf->set('resource.theme', escape($_POST['theme']));
             $conf->set('redirector.url', escape($_POST['redirector']));
-            $conf->set('general.separators', escape($_POST['separators']));
+            $conf->set('general.separators', $_POST['separators']);
             $conf->set('security.session_protection_disabled', !empty($_POST['disablesessionprotection']));
             $conf->set('privacy.default_private_links', !empty($_POST['privateLinkByDefault']));
             $conf->set('feed.rss_permalinks', !empty($_POST['enableRssPermalinks']));

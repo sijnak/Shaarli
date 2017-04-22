@@ -39,7 +39,7 @@ class TagUtil
         // Remove first '-' char in tags.
         $tagString = preg_replace('/(^| )\-/', '$1', $tagString);
         // Split and remove duplicates.
-        $tags = array_unique(preg_split('/\s*['.$this->separators.']+\s*/', $tagString, -1, PREG_SPLIT_NO_EMPTY));
+        $tags = array_unique(preg_split('/\s*['.preg_quote($this->separators).']+\s*/', $tagString, -1, PREG_SPLIT_NO_EMPTY));
     
         return $tags;
     }
