@@ -242,7 +242,7 @@ class LinkFilter
      *
      * You can specify one or more tags, in an array
      *
-     * @param string $tags          list of tags (array)
+     * @param array  $tags          list of tags
      * @param bool   $casesensitive ignore case if false.
      * @param string $visibility    Optional: return only all/private/public links.
      *

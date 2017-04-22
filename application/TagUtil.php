@@ -18,10 +18,18 @@ class TagUtil
         $this->default_separator = substr($separators, 0, 1);
     }
     
+    /**
+     * Parse a string of tags and return an array
+     *
+     * @param string $tagString    string of tags separated by any of the allowed
+     *                             tag separators
+     *
+     * @return array the tags stored in an array
+     */
     public function parseTags($tagString) {
         // empty string means empty array of tags
         if (empty($tagString))
-            return array();
+            return [];
 
         $tagString = escape($tagString);
         // Remove spaces and tag separators at beginning and end of string.
@@ -36,10 +44,18 @@ class TagUtil
         return $tags;
     }
 
+    /**
+     * Convert an array of tags into a string, using the default separator.
+     *
+     * @param array $tags the tags you want listed as a string
+     */
     public function serializeTags($tags) {
         return implode($this->default_separator.' ', $tags);
     }
     
+    /**
+     * Give the default separator, being the first of the separators set in configuration
+     */
     public function getDefaultSeparator() {
         return $this->default_separator;
     }

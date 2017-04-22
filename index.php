@@ -1589,7 +1589,7 @@ function renderPage($conf, $pluginManager, $LINKSDB, $tagUtil)
 function buildLinkList($PAGE,$LINKSDB, $conf, $tagUtil, $pluginManager)
 {
     // Used in templates
-    $searchtags = !empty($_GET['searchtags']) ? $tagUtil->parseTags(escape($_GET['searchtags'])) : array();
+    $searchtags = !empty($_GET['searchtags']) ? $tagUtil->parseTags(escape($_GET['searchtags'])) : [];
     $searchtagslist = $tagUtil->serializeTags($searchtags);
     $searchterm = !empty($_GET['searchterm']) ? escape(normalize_spaces($_GET['searchterm'])) : '';
 
