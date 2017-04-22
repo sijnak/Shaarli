@@ -12,11 +12,10 @@ class TagUtil
      * Creates a new tag utility object
      * 
      * @param string separators all separators
-     * @param string default_separator
      */
-    public function __construct($separators, $default_separator) {
+    public function __construct($separators) {
         $this->separators = $separators;
-        $this->default_separator = $default_separator;
+        $this->default_separator = substr($separators, 0, 1);
     }
     
     public function parseTags($tagString) {
@@ -41,5 +40,9 @@ class TagUtil
         return implode($this->default_separator.' ', $tags);
     }
     
+    public function getDefaultSeparator() {
+        return $this->default_separator;
+    }
+
 }
 ?>

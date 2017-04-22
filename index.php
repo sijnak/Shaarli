@@ -128,7 +128,7 @@ RainTPL::$cache_dir = $conf->get('resource.raintpl_tmp'); // cache directory
 
 // Instance of the TagUtil class used to parse and serialize tag lists,
 // respectively from forms and for display.
-$tagUtil = new TagUtil($conf->get('general.separators'), $conf->get('general.default_separator'));
+$tagUtil = new TagUtil($conf->get('general.separators'));
 
 $pluginManager = new PluginManager($conf);
 $pluginManager->load($conf->get('general.enabled_plugins'));
@@ -1122,11 +1122,6 @@ function renderPage($conf, $pluginManager, $LINKSDB, $tagUtil)
             $conf->set('resource.theme', escape($_POST['theme']));
             $conf->set('redirector.url', escape($_POST['redirector']));
             $conf->set('general.separators', escape($_POST['separators']));
-            // TODO: inform the user if she chose a default separator that is not
-            //       already defined as a separator (in which case it is ignored)
-            if (!empty($_POST['defaultSeparator'])
-                && strpos($conf->get('general.separators'), $_POST['defaultSeparator']) !== false)
-                    $conf->set('general.default_separator', $_POST['defaultSeparator']);
             $conf->set('security.session_protection_disabled', !empty($_POST['disablesessionprotection']));
             $conf->set('privacy.default_private_links', !empty($_POST['privateLinkByDefault']));
             $conf->set('feed.rss_permalinks', !empty($_POST['enableRssPermalinks']));
@@ -1159,7 +1154,6 @@ function renderPage($conf, $pluginManager, $LINKSDB, $tagUtil)
             $PAGE->assign('redirector', $conf->get('redirector.url'));
             list($timezone_form, $timezone_js) = generateTimeZoneForm($conf->get('general.timezone'));
             $PAGE->assign('separators', $conf->get('general.separators'));
-            $PAGE->assign('defaultSeparator', $conf->get('general.default_separator'));
             $PAGE->assign('timezone_form', $timezone_form);
             $PAGE->assign('timezone_js',$timezone_js);
             $PAGE->assign('private_links_default', $conf->get('privacy.default_private_links', false));
@@ -1363,7 +1357,7 @@ function renderPage($conf, $pluginManager, $LINKSDB, $tagUtil)
         if (!$link) { header('Location: ?'); exit; } // Link not found in database.
         $link['linkdate'] = $link['created']->format(LinkDB::LINK_DATE_FORMAT);
         $data = array(
-            'default_separator' => $conf->get('general.default_separator'),
+            'default_separator' => $tagUtil->getDefaultSeparator(),
             'link' => $link,
             'link_is_new' => false,
             'http_referer' => (isset($_SERVER['HTTP_REFERER']) ? escape($_SERVER['HTTP_REFERER']) : ''),
@@ -1432,7 +1426,7 @@ function renderPage($conf, $pluginManager, $LINKSDB, $tagUtil)
         }
 
         $data = array(
-            'default_separator' => $conf->get('general.default_separator'),
+            'default_separator' => $tagUtil->getDefaultSeparator(),
             'link' => $link,
             'link_is_new' => $link_is_new,
             'http_referer' => (isset($_SERVER['HTTP_REFERER']) ? escape($_SERVER['HTTP_REFERER']) : ''),
@@ -1682,8 +1676,7 @@ function buildLinkList($PAGE,$LINKSDB, $conf, $tagUtil, $pluginManager)
         'search_tags_list' => $searchtagslist,
         'redirector' => $conf->get('redirector.url'),  // Optional redirector URL.
         'links' => $linkDisp,
-        'separators' => $conf->get('general.separators'),
-        'default_separator' => $conf->get('general.default_separator'), // TODO: fix auto-completion for custom separator
+        'separators' => $conf->get('general.separators'),// TODO: fix auto-completion for custom separator
         'tags' => $LINKSDB->allTags(),
     );
 

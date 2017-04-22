@@ -194,7 +194,6 @@ class ConfigManager
             'general.title',
             'general.header_link',
             'general.separators',
-            'general.default_separator',
             'privacy.default_private_links',
             'redirector.url',
         );
@@ -318,7 +317,6 @@ class ConfigManager
         $this->setEmpty('general.links_per_page', 20);
         $this->setEmpty('general.enabled_plugins', self::$DEFAULT_PLUGINS);
         $this->setEmpty('general.separators', ', ');
-        $this->setEmpty('general.default_separator', ' ');
 
         $this->setEmpty('updates.check_updates', false);
         $this->setEmpty('updates.check_updates_branch', 'stable');
